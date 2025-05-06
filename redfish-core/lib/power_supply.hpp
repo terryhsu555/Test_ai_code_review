@@ -475,6 +475,45 @@ inline void getEfficiencyPercent(
         });
 }
 
+inline void
+    getPoweringChassisList(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+{
+    // getValidPowerSupplyPath
+    constexpr std::array<std::string_view, 2> interfaces = {
+        "xyz.openbmc_project.Inventory.Item.Board",
+        "xyz.openbmc_project.Inventory.Item.Chassis"};
+
+    // Get the Chassis Collection
+    dbus::utility::getSubTreePaths(
+        "/xyz/openbmc_project/inventory", 0, interfaces,
+        [asyncResp](const boost::system::error_code& ec,
+                    const dbus::utility::MapperGetSubTreePathsResponse&
+                        chassisPaths) mutable {
+        BMCWEB_LOG_DEBUG("getChassis respHandler enter");
+        if (ec)
+        {
+            BMCWEB_LOG_ERROR("getChassis respHandler DBUS error: {}", ec);
+            messages::internalError(asyncResp->res);
+            return;
+        }
+
+        asyncResp->res.jsonValue["Links"]["PoweringChassis"] = nlohmann::json::array();
+        for (const std::string& chassis : chassisPaths)
+        {
+            sdbusplus::message::object_path objectpath(chassis);
+            std::string chassisName = objectpath.filename();
+
+            if (chassis.find("powersupply") == std::string::npos)
+            {
+                nlohmann::json item = nlohmann::json::object();
+                item["@odata.id"] = boost::urls::format("/redfish/v1/Chassis/{}", chassisName);
+
+                asyncResp->res.jsonValue["Links"]["PoweringChassis"].emplace_back(std::move(item));
+            }
+        }
+    });
+}
+
 inline void doPowerSupplyGet(
     const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
     const std::string& chassisId, const std::string& powerSupplyId,
@@ -507,6 +546,7 @@ inline void doPowerSupplyGet(
     getPowerSupplyFirmwareVersion(asyncResp, service, powerSupplyPath);
     getPowerSupplyLocation(asyncResp, service, powerSupplyPath);
     getEfficiencyPercent(asyncResp);
+    getPoweringChassisList(asyncResp);
     getLocationIndicatorActive(asyncResp, powerSupplyPath);
 }
 
